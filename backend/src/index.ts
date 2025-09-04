@@ -19,7 +19,31 @@ import { getDateRange } from "./utils/date";
 import analyticsRoutes from "./routes/analytics.route";
 
 const app = express();
-const BASE_PATH = Env.BASE_PATH;
+
+/* ---------- SANITIZE BASE_PATH (prevents path-to-regexp errors) ---------- */
+let BASE_PATH = (Env.BASE_PATH || "").trim();
+try {
+  // If Env.BASE_PATH is accidentally set to a full URL, extract only the pathname
+  if (BASE_PATH && /^https?:\/\//i.test(BASE_PATH)) {
+    const u = new URL(BASE_PATH);
+    BASE_PATH = u.pathname || "";
+  }
+
+  // remove trailing slashes
+  BASE_PATH = BASE_PATH.replace(/\/+$/, "");
+
+  // ensure a single leading slash when non-empty
+  if (BASE_PATH && !BASE_PATH.startsWith("/")) {
+    BASE_PATH = "/" + BASE_PATH;
+  }
+
+  // treat "/" as empty (so routes become "/auth" not "//auth")
+  if (BASE_PATH === "/") BASE_PATH = "";
+} catch (err) {
+  console.warn("Warning: invalid BASE_PATH in env, falling back to empty. Value:", Env.BASE_PATH);
+  BASE_PATH = "";
+}
+/* ------------------------------------------------------------------------ */
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -35,13 +59,14 @@ const envOrigins = (Env.FRONTEND_ORIGIN || "")
 const HARD_CODED = [
   "https://ai-financial-platform-589zywku7-jack9801s-projects.vercel.app",
   "https://ai-financial-platform-git-main-jack9801s-projects.vercel.app",
-  // you can add more here if needed
+  // add other deploy origins here if needed
 ];
 
-const allowedOrigins = Array.from(new Set(
-  [...envOrigins, ...HARD_CODED]
-    .map(o => o.replace(/\/+$/, "")) // remove trailing slashes
-));
+const allowedOrigins = Array.from(
+  new Set(
+    [...envOrigins, ...HARD_CODED].map(o => o.replace(/\/+$/, "")) // remove trailing slashes
+  )
+);
 
 // debug middleware (optional but helpful while debugging on Render)
 // logs the incoming Origin and whether it's allowed
@@ -58,28 +83,28 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // allow non-browser tools (curl, Postman) - they send no Origin
-    if (!origin) return callback(null, true);
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // allow non-browser tools (curl, Postman) - they send no Origin
+      if (!origin) return callback(null, true);
 
-    const normalized = origin.replace(/\/+$/, "");
-    if (allowedOrigins.includes(normalized)) {
-      // cb(null, true) tells cors to echo the requesting origin in ACAO
-      return callback(null, true);
-    }
-    // explicitly deny: this results in no ACAO header for the browser (expected)
-    return callback(new Error("Not allowed by CORS"));
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept"]
-}));
+      const normalized = origin.replace(/\/+$/, "");
+      if (allowedOrigins.includes(normalized)) {
+        // cb(null, true) tells cors to echo the requesting origin in ACAO
+        return callback(null, true);
+      }
+      // explicitly deny: this results in no ACAO header for the browser (expected)
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  })
+);
 
 // Ensure preflight requests are handled
 app.options("*", cors());
-
-
 
 app.get(
   "/",
