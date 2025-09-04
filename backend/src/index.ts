@@ -1,3 +1,4 @@
+// src/index.ts
 import "dotenv/config";
 import "./config/passport.config";
 import express, { NextFunction, Request, Response } from "express";
@@ -50,7 +51,8 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(passport.initialize());
 
-// build allowed origins from env or fallback to explicit list
+/* ---------------------- CORS / Allowed Origins --------------------------- */
+// Build allowed origins from env or fallback to explicit list.
 const envOrigins = (Env.FRONTEND_ORIGIN || "")
   .split(",")
   .map(s => s.trim())
@@ -68,8 +70,7 @@ const allowedOrigins = Array.from(
   )
 );
 
-// debug middleware (optional but helpful while debugging on Render)
-// logs the incoming Origin and whether it's allowed
+// debug middleware (optional but useful while debugging on Render)
 app.use((req, res, next) => {
   const origin = (req.headers.origin || "").toString();
   const normalized = origin.replace(/\/+$/, "");
@@ -105,6 +106,7 @@ app.use(
 
 // Ensure preflight requests are handled
 app.options("*", cors());
+/* ------------------------------------------------------------------------ */
 
 app.get(
   "/",
