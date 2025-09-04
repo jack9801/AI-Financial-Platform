@@ -26,22 +26,58 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(passport.initialize());
 
-const allowedOrigins = [
-  "https://ai-financial-platform-589zywku7-jack9801s-projects.vercel.app/",
-  "https://ai-financial-platform-git-main-jack9801s-projects.vercel.app/"
+// build allowed origins from env or fallback to explicit list
+const envOrigins = (Env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const HARD_CODED = [
+  "https://ai-financial-platform-589zywku7-jack9801s-projects.vercel.app",
+  "https://ai-financial-platform-git-main-jack9801s-projects.vercel.app",
+  // you can add more here if needed
 ];
 
+const allowedOrigins = Array.from(new Set(
+  [...envOrigins, ...HARD_CODED]
+    .map(o => o.replace(/\/+$/, "")) // remove trailing slashes
+));
+
+// debug middleware (optional but helpful while debugging on Render)
+// logs the incoming Origin and whether it's allowed
+app.use((req, res, next) => {
+  const origin = (req.headers.origin || "").toString();
+  const normalized = origin.replace(/\/+$/, "");
+  console.log("[CORS] Origin:", origin, "Normalized:", normalized, "Allowed:", allowedOrigins.includes(normalized));
+  next();
+});
+
+// Vary header so caches don't return wrong ACAO
+app.use((req, res, next) => {
+  res.setHeader("Vary", "Origin");
+  next();
+});
+
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
+  origin: (origin, callback) => {
+    // allow non-browser tools (curl, Postman) - they send no Origin
+    if (!origin) return callback(null, true);
+
+    const normalized = origin.replace(/\/+$/, "");
+    if (allowedOrigins.includes(normalized)) {
+      // cb(null, true) tells cors to echo the requesting origin in ACAO
+      return callback(null, true);
     }
+    // explicitly deny: this results in no ACAO header for the browser (expected)
+    return callback(new Error("Not allowed by CORS"));
   },
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"]
 }));
+
+// Ensure preflight requests are handled
+app.options("*", cors());
 
 
 
