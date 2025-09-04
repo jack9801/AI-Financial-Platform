@@ -16,69 +16,36 @@ import userRoutes from "./routes/user.route";
 import transactionRoutes from "./routes/transaction.route";
 import { initializeCrons } from "./cron";
 import reportRoutes from "./routes/report.route";
-import { getDateRange } from "./utils/date";
 import analyticsRoutes from "./routes/analytics.route";
 
 const app = express();
 
-/* ---------- SANITIZE BASE_PATH (prevents path-to-regexp errors) ---------- */
-let BASE_PATH = (Env.BASE_PATH || "").trim();
-try {
-  // If Env.BASE_PATH is accidentally set to a full URL, extract only the pathname
-  if (BASE_PATH && /^https?:\/\//i.test(BASE_PATH)) {
-    const u = new URL(BASE_PATH);
-    BASE_PATH = u.pathname || "";
+/* ------------------ BASE_PATH (normalize /api) ------------------ */
+let BASE_PATH = (Env.BASE_PATH || "").toString().trim();
+if (BASE_PATH && /^https?:\/\//i.test(BASE_PATH)) {
+  // If somebody set a full URL accidentally, extract pathname
+  try {
+    BASE_PATH = new URL(BASE_PATH).pathname || "";
+  } catch {
+    BASE_PATH = "";
   }
-
-  // remove trailing slashes
-  BASE_PATH = BASE_PATH.replace(/\/+$/, "");
-
-  // ensure a single leading slash when non-empty
-  if (BASE_PATH && !BASE_PATH.startsWith("/")) {
-    BASE_PATH = "/" + BASE_PATH;
-  }
-
-  // treat "/" as empty (so routes become "/auth" not "//auth")
-  if (BASE_PATH === "/") BASE_PATH = "";
-} catch (err) {
-  console.warn("Warning: invalid BASE_PATH in env, falling back to empty. Value:", Env.BASE_PATH);
-  BASE_PATH = "";
 }
-/* ------------------------------------------------------------------------ */
+BASE_PATH = BASE_PATH.replace(/\/+$/, ""); // remove trailing slashes
+if (BASE_PATH && !BASE_PATH.startsWith("/")) BASE_PATH = "/" + BASE_PATH;
+if (BASE_PATH === "/") BASE_PATH = ""; // treat "/" as empty
+/* --------------------------------------------------------------- */
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
 app.use(passport.initialize());
 
-/* ---------------------- CORS / Allowed Origins --------------------------- */
-// Build allowed origins from env or fallback to explicit list.
-const envOrigins = (Env.FRONTEND_ORIGIN || "")
+/* ---------------------- CORS (from Env.FRONTEND_ORIGIN) --------------------- */
+// Example Env.FRONTEND_ORIGIN: "https://ai-financial-platform.vercel.app,http://localhost:5173"
+const allowedOrigins = (Env.FRONTEND_ORIGIN || "")
   .split(",")
-  .map(s => s.trim())
+  .map(s => s.trim().replace(/\/+$/, ""))
   .filter(Boolean);
 
-const HARD_CODED = [
-  "https://ai-financial-platform-589zywku7-jack9801s-projects.vercel.app",
-  "https://ai-financial-platform-git-main-jack9801s-projects.vercel.app",
-  // add other deploy origins here if needed
-];
-
-const allowedOrigins = Array.from(
-  new Set(
-    [...envOrigins, ...HARD_CODED].map(o => o.replace(/\/+$/, "")) // remove trailing slashes
-  )
-);
-
-// debug middleware (optional but useful while debugging on Render)
-app.use((req, res, next) => {
-  const origin = (req.headers.origin || "").toString();
-  const normalized = origin.replace(/\/+$/, "");
-  console.log("[CORS] Origin:", origin, "Normalized:", normalized, "Allowed:", allowedOrigins.includes(normalized));
-  next();
-});
-
-// Vary header so caches don't return wrong ACAO
 app.use((req, res, next) => {
   res.setHeader("Vary", "Origin");
   next();
@@ -87,15 +54,9 @@ app.use((req, res, next) => {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow non-browser tools (curl, Postman) - they send no Origin
-      if (!origin) return callback(null, true);
-
+      if (!origin) return callback(null, true); // allow non-browser tools
       const normalized = origin.replace(/\/+$/, "");
-      if (allowedOrigins.includes(normalized)) {
-        // cb(null, true) tells cors to echo the requesting origin in ACAO
-        return callback(null, true);
-      }
-      // explicitly deny: this results in no ACAO header for the browser (expected)
+      if (allowedOrigins.includes(normalized)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -104,25 +65,27 @@ app.use(
   })
 );
 
-// Ensure preflight requests are handled
 app.options("*", cors());
-/* ------------------------------------------------------------------------ */
+/* -------------------------------------------------------------------------- */
 
 app.get(
   "/",
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    throw new BadRequestException("This is a test error");
+    // Original file threw a test error; keep as-is or comment out for prod
+    // throw new BadRequestException("This is a test error");
     res.status(HTTPSTATUS.OK).json({
       message: "Hi welcome to AI Financial Platform API",
     });
   })
 );
 
+/* ------------------------ Mount routes with BASE_PATH ---------------------- */
 app.use(`${BASE_PATH}/auth`, authRoutes);
 app.use(`${BASE_PATH}/user`, passportAuthenticateJwt, userRoutes);
 app.use(`${BASE_PATH}/transaction`, passportAuthenticateJwt, transactionRoutes);
 app.use(`${BASE_PATH}/report`, passportAuthenticateJwt, reportRoutes);
 app.use(`${BASE_PATH}/analytics`, passportAuthenticateJwt, analyticsRoutes);
+/* ------------------------------------------------------------------------- */
 
 app.use(errorHandler);
 
