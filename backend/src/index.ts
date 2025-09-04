@@ -26,19 +26,39 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(passport.initialize());
 
+/* === CORS FIX START === */
+const whitelist = (Env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map(s => s.trim().replace(/\/+$/, "")) // strip trailing slashes
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: Env.FRONTEND_ORIGIN,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // allow server-to-server tools
+      const normalized = origin.replace(/\/+$/, "");
+      return cb(null, whitelist.includes(normalized));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   })
 );
+
+// ensure caches vary by Origin and handle preflight cleanly
+app.use((req, res, next) => {
+  res.setHeader("Vary", "Origin");
+  next();
+});
+app.options("*", cors());
+/* === CORS FIX END === */
 
 app.get(
   "/",
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     throw new BadRequestException("This is a test error");
     res.status(HTTPSTATUS.OK).json({
-      message: "Hello Subcribe to the channel",
+      message: "Hi welcome to AI Financial Platform API",
     });
   })
 );
